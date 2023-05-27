@@ -5,9 +5,11 @@ import time
 from bs4 import BeautifulSoup
 from typing import Dict, List, Union, Tuple, Optional
 from dotenv import load_dotenv
+from elevenlabs import generate, set_api_key, save
 
 load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
+set_api_key(os.getenv("ELEVEN_LABS_KEY"))
 
 
 def summarize(text: str, title: Optional[str] = None) -> str:
@@ -40,7 +42,8 @@ def get_hn_posts(post_type: str, num_posts: int) -> List[Dict[str, Union[str, in
         'page': 0
     }
 
-    response = requests.get('http://hn.algolia.com/api/v1/search_by_date', params=params)
+    response = requests.get(
+        'http://hn.algolia.com/api/v1/search_by_date', params=params)
     response.raise_for_status()
     data = response.json()
     return data['hits']
@@ -54,10 +57,12 @@ def get_comments_from_post(post_id: str) -> List[Dict[str, Union[str, int]]]:
         'page': 0
     }
 
-    response = requests.get('http://hn.algolia.com/api/v1/search_by_date', params=params)
+    response = requests.get(
+        'http://hn.algolia.com/api/v1/search_by_date', params=params)
     response.raise_for_status()
     data = response.json()
     return data['hits']
+
 
 def extract_text(html_content: Optional[str]) -> Optional[str]:
     if html_content:
@@ -83,7 +88,7 @@ def get_text_from_hn_post(post: Dict[str, Union[str, int, None]]) -> Tuple[str, 
 def chunk_text(text: str, max_length: int) -> List[str]:
     words = text.split()
     chunks = []
-    current_chunk = [] 
+    current_chunk = []
     current_length = 0
     for word in words:
         if current_length + len(word) <= max_length:
@@ -114,7 +119,8 @@ def map_title_summary(posts: List[Dict[str, Union[str, int]]]) -> Dict[str, str]
         comments = []
         if 'ask_hn' in post['_tags']:
             comments = get_comments_from_post(str(post['objectID']))
-            comments_text = ' '.join([comment['comment_text'] for comment in comments])
+            comments_text = ' '.join([comment['comment_text']
+                                     for comment in comments])
             print(f"Comments: {comments_text}")
             content += " Comments: " + comments_text
 
@@ -123,13 +129,15 @@ def map_title_summary(posts: List[Dict[str, Union[str, int]]]) -> Dict[str, str]
             chunk_summaries = []
 
             for chunk in chunks:
-                chunk_summary = summarize(chunk + "\nPlease provide a brief summary.")
+                chunk_summary = summarize(
+                    chunk + "\nPlease provide a brief summary.")
                 chunk_summaries.append(chunk_summary)
                 time.sleep(10)
 
             full_summary_text = ' '.join(chunk_summaries)
             try:
-                final_summary = summarize(full_summary_text + "\nPlease provide a concise final summary.", title)
+                final_summary = summarize(
+                    full_summary_text + "\nPlease provide a concise final summary.", title)
             except Exception as e:
                 continue
         else:
@@ -151,12 +159,25 @@ def curate(title_summary_map: Dict[str, str]) -> str:
     return podcast_script
 
 
+def save_audio(podcast_script: str) -> None:
+    audio = generate(
+        text=podcast_script,
+        voice="Bella",
+        model="eleven_monolingual_v1",
+    )
+    save(audio, "podcast.mp3")
+
+
 def main():
     posts = get_hn_posts('story', 5)
     # posts += get_hn_posts('ask_hn', 5)
     title_summary_map = map_title_summary(posts)
+    print("MAKING SCRIPT...")
     podcast_script = curate(title_summary_map)
-    print(f"Podcast script: {podcast_script}")
+    print("DONE")
+    print("Saving audio...")
+    save_audio(podcast_script)
+    print("DONE")
 
 
 if __name__ == "__main__":
